@@ -1,0 +1,16 @@
+{
+  "name": "RFX9600 MQTT Bridge",
+  "version": "1.0.0",
+  "slug": "rfx9600_mqtt",
+  "description": "Listener UDP pour RFX9600, publication MQTT",
+  "startup": "services",
+  "boot": "auto",
+  "ports": {
+    "65442/udp": 65442
+  },
+  "host_network": true,
+  "options": {},
+  "schema": {},
+  "image": "local/rfx9600_mqtt",
+  "arch": ["amd64"]
+}
