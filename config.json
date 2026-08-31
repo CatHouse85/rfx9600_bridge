@@ -11,6 +11,5 @@
   "host_network": true,
   "options": {},
   "schema": {},
-  "image": "local/rfx9600_mqtt",
   "arch": ["amd64"]
 }
