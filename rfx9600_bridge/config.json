@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Écoute les trames UDP du RFX9600 et les publie sur MQTT pour Home Assistant.",
   "image": "ghcr.io/cathouse85/rfx9600_bridge",
+  "version": "1.0.0",
   "startup": "services",
   "init": false,
   "arch": ["amd64", "aarch64"],
