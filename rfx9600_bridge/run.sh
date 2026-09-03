@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -e
 
 echo "Starting RFX9600 UDP → MQTT bridge..."
