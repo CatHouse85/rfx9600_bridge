@@ -8,7 +8,7 @@ echo "Starting RFX9600 UDP → MQTT bridge..."
 
 echo "Starting RFX9600 UDP → MQTT bridge2..."
 
-python3 /app/rfx9600_listener.py
+python /app/rfx9600_listener.py
 
 echo "Starting RFX9600 UDP → MQTT bridg3..."
 
