@@ -7,8 +7,9 @@ echo "Starting RFX9600 UDP → MQTT bridge..."
 # les options seront passées via variables d’environnement par HA.
 
 echo "Starting RFX9600 UDP → MQTT bridge2..."
-
-python /app/rfx9600_listener.py
+python - << 'EOF'
+print("Hello frm Python")
+# python /app/rfx9600_listener.py
 
 echo "Starting RFX9600 UDP → MQTT bridg3..."
 
