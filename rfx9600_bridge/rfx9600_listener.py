@@ -1,3 +1,4 @@
+print("DEBUG: Python démarre correctement…")
 import socket
 import os
 from mqtt_bridge import publish_frame
