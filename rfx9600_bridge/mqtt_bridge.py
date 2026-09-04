@@ -1,20 +1,24 @@
-import os
 import paho.mqtt.client as mqtt
 
-MQTT_HOST = os.getenv("MQTT_HOST", "core-mosquitto")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
-MQTT_USER = os.getenv("MQTT_USERNAME", "")
-MQTT_PASS = os.getenv("MQTT_PASSWORD", "")
-MQTT_BASE = os.getenv("MQTT_TOPIC_BASE", "rfx9600")
+MQTT_HOST = "core-mosquitto"
+MQTT_PORT = 1883
+MQTT_TOPIC_BASE = "rfx9600/la_chaume"
 
+# Connexion au broker MQTT
 client = mqtt.Client()
-if MQTT_USER:
-    client.username_pw_set(MQTT_USER, MQTT_PASS)
-
 client.connect(MQTT_HOST, MQTT_PORT, 60)
-client.loop_start()
 
 def publish_frame(data: bytes):
-    hex_payload = data.hex()
-    topic = f"{MQTT_BASE}/raw"
-    client.publish(topic, hex_payload, qos=0, retain=False)
+    """
+    Publie les 3 premiers octets de la trame RFX9600
+    sous forme hexadécimale dans MQTT.
+    """
+    try:
+        trois_octets = data[:3].hex()
+        topic = f"{MQTT_TOPIC_BASE}/ack"
+        client.publish(topic, trois_octets)
+        print(f"MQTT → {topic}: {trois_octets}")
+    except Exception as e:
+        err_topic = f"{MQTT_TOPIC_BASE}/error"
+        client.publish(err_topic, str(e))
+        print(f"MQTT ERROR → {e}")
