@@ -1,3 +1,7 @@
+with open(__file__, "rb") as f:
+    content = f.read()
+print("DEBUG: CRLF present?" , b"\r\n" in content)
+print("DEBUG: starts with BOM?", content.startswith(b"\xef\xbb\xbf"))
 import socket
 import os
 from mqtt_bridge import publish_frame
