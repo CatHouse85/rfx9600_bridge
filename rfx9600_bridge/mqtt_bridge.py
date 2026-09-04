@@ -4,15 +4,10 @@ MQTT_HOST = "core-mosquitto"
 MQTT_PORT = 1883
 MQTT_TOPIC_BASE = "rfx9600/la_chaume"
 
-# Connexion au broker MQTT
 client = mqtt.Client()
 client.connect(MQTT_HOST, MQTT_PORT, 60)
 
 def publish_frame(data: bytes):
-    """
-    Publie les 3 premiers octets de la trame RFX9600
-    sous forme hexadécimale dans MQTT.
-    """
     try:
         trois_octets = data[:3].hex()
         topic = f"{MQTT_TOPIC_BASE}/ack"
