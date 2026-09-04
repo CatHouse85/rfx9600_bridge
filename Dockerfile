@@ -8,7 +8,7 @@ COPY rfx9600_bridge/run.sh /app/
 COPY rfx9600_bridge/mqtt_bridge.py /app/
 COPY rfx9600_bridge/rfx9600_listener.py /app/
 
-RUN pip install paho-mqtt
+RUN python3 -m pip install paho-mqtt
 
 RUN chmod +x /app/run.sh
 
