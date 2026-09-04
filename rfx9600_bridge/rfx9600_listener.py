@@ -1,18 +1,12 @@
-with open(__file__, "rb") as f:
-    content = f.read()
-print("DEBUG: CRLF present?" , b"\r\n" in content)
-#
-print("DEBUG: Python démarre correctement…")
 import socket
 import os
 from mqtt_bridge import publish_frame
 
-# Port UDP du RFX9600 (4998 par défaut)
 UDP_PORT = int(os.getenv("UDP_PORT", "4998"))
 
+print("DEBUG: Python démarre correctement…")
 print(f"DEBUG: lancement du listener sur UDP {UDP_PORT}")
 
-# Socket UDP
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(("", UDP_PORT))
 
