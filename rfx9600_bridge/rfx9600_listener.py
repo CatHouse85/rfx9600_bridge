@@ -1,3 +1,7 @@
+with open(__file__, "rb") as f:
+    content = f.read()
+print("DEBUG: CRLF present?" , b"\r\n" in content)
+#
 print("DEBUG: Python démarre correctement…")
 import socket
 import os
