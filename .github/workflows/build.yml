@@ -36,6 +36,6 @@ jobs:
         with:
           context: ./rfx9600_bridge
           file: ./rfx9600_bridge/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/cathouse85/rfx9600_bridge:1.0.0
