@@ -1,1 +1,33 @@
-
+{
+  "name": "RFX9600 UDP -> MQTT Bridge",
+  "slug": "rfx9600_bridge",
+  "version": "1.0.0",
+  "description": "Envoie des commandes IR via un RFX9600 et publie les resultats sur MQTT pour Home Assistant.",
+  "image": "ghcr.io/cathouse85/rfx9600_bridge",
+  "startup": "services",
+  "init": false,
+  "arch": ["amd64", "aarch64"],
+  "map": ["share:rw"],
+  "options": {
+    "device_ip": "192.168.1.50",
+    "udp_port": 4998,
+    "mqtt_host": "core-mosquitto",
+    "mqtt_port": 1883,
+    "mqtt_username": "",
+    "mqtt_password": "",
+    "mqtt_topic_base": "rfx9600/la_chaume",
+    "codes_file": "/share/rfx9600/codes.csv",
+    "response_timeout": 2.0
+  },
+  "schema": {
+    "device_ip": "str",
+    "udp_port": "int",
+    "mqtt_host": "str",
+    "mqtt_port": "int",
+    "mqtt_username": "str",
+    "mqtt_password": "str",
+    "mqtt_topic_base": "str",
+    "codes_file": "str",
+    "response_timeout": "float"
+  }
+}
