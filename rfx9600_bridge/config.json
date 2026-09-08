@@ -6,7 +6,7 @@
   "image": "ghcr.io/cathouse85/rfx9600_bridge",
   "startup": "services",
   "init": false,
-  "arch": ["amd64", "aarch64"],
+  "arch": ["amd64"],
   "map": ["share:rw"],
   "options": {
     "device_ip": "11.85.85.101",
