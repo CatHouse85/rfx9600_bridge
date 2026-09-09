@@ -43,9 +43,12 @@ class MqttBridge:
         raise RuntimeError("Impossible de se connecter au broker MQTT apres plusieurs tentatives")
 
     def _on_connect(self, client, userdata, flags, rc):
-        topic = f"{self.topic_base}/command"
-        client.subscribe(topic)
-        print(f"MQTT abonne a {topic}")
+       if rc != 0:
+        print(f"MQTT échec de connexion, code retour = {rc}")
+        return     
+       topic = f"{self.topic_base}/command"
+       client.subscribe(topic)
+       print(f"MQTT abonne a {topic}")
 
     def _on_disconnect(self, client, userdata, rc):        # ← nouvelle méthode
         print(f"MQTT déconnecté, code retour = {rc}")
