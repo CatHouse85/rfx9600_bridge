@@ -23,6 +23,7 @@ class MqttBridge:
             self.client.username_pw_set(username, password)
 
         self.client.on_connect = self._on_connect
+        self.client.on_disconnect = self._on_disconnect   # ← ajout
         self.client.on_message = self._on_message
         self._on_command = on_command
 
@@ -45,6 +46,9 @@ class MqttBridge:
         topic = f"{self.topic_base}/command"
         client.subscribe(topic)
         print(f"MQTT abonne a {topic}")
+
+    def _on_disconnect(self, client, userdata, rc):        # ← nouvelle méthode
+        print(f"MQTT déconnecté, code retour = {rc}")
 
     def _on_message(self, client, userdata, msg):
         command_name = msg.payload.decode(errors="ignore").strip()
