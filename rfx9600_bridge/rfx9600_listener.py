@@ -1,13 +1,15 @@
 """
 RFX9600 bridge : recoit un nom de commande via MQTT, retrouve le payload IR
-correspondant dans le CSV (/share, modifiable a chaud), construit la trame
-UDP, l'envoie UNE SEULE FOIS (pas de retry - certains equipements utilisent
-un code "toggle" : renvoyer la commande la ferait basculer a nouveau), puis
+correspondant dans le CSV partage (/share, commun a tous les sites, filtre
+localement selon la 'location' de cette instance), construit la trame UDP,
+l'envoie UNE SEULE FOIS (pas de retry - certains equipements utilisent un
+code "toggle" : renvoyer la commande la ferait basculer a nouveau), puis
 attend une reponse portant le meme packet_id pour confirmer la reception.
 """
 
 import csv
 import json
+import os
 import socket
 import struct
 import threading
@@ -23,20 +25,45 @@ OPTIONS_PATH = "/data/options.json"
 HEADER_FORMAT = ">BH9xHHB5xH4x"
 FRAME_TYPE_IR = 0x4000
 
+# Un fichier codes.csv unique, partage par tous les sites (colonne "site").
+# Chaque instance ne charge que les lignes qui la concernent :
+#   - "all"                 -> valable partout
+#   - la valeur de sa propre "location"
+#   - les sous-zones de sa location (ex. Paris voit aussi paris_s / paris_c)
+SITE_GROUPS = {
+    "la_chaume": {"all", "la_chaume"},
+    "paris": {"all", "paris", "paris_s", "paris_c"},
+}
+
 
 def load_options():
     with open(OPTIONS_PATH) as f:
         return json.load(f)
 
 
-def load_codes(path):
+def load_mqtt_env():
+    """Recupere les identifiants MQTT injectes automatiquement par Supervisor
+    grace a 'services: [\"mqtt:want\"]' dans config.json."""
+    return {
+        "host": os.getenv("MQTT_HOST", "core-mosquitto"),
+        "port": int(os.getenv("MQTT_PORT", "1883")),
+        "username": os.getenv("MQTT_USERNAME", ""),
+        "password": os.getenv("MQTT_PASSWORD", ""),
+    }
+
+
+def load_codes(path, location):
     """Relit le CSV a chaque commande : les modifications faites a chaud
     dans /share (via Samba / File editor) sont donc prises en compte
-    immediatement, sans redemarrer l'add-on."""
+    immediatement, sans redemarrer l'add-on. Ne garde que les lignes
+    pertinentes pour cette 'location'."""
+    allowed_sites = SITE_GROUPS[location]
     codes = {}
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
+            if row["site"] not in allowed_sites:
+                continue
             codes[row["command_name"]] = {
                 "port": int(row["port"]),
                 "payload": bytes.fromhex(row["payload_hex"]),
@@ -68,9 +95,10 @@ class PacketIdCounter:
 
 
 class Rfx9600Bridge:
-    def __init__(self, options):
+    def __init__(self, options, mqtt_env):
         self.device_ip = options["device_ip"]
         self.udp_port = options["udp_port"]
+        self.location = options["location"]
         self.response_timeout = float(options.get("response_timeout", 2.0))
         self.codes_file = options.get("codes_file", "/share/rfx9600/codes.csv")
         self.packet_ids = PacketIdCounter()
@@ -78,20 +106,21 @@ class Rfx9600Bridge:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("", self.udp_port))
 
+        topic_base = f"rfx9600/{self.location}"
         self.mqtt = MqttBridge(
-            host=options["mqtt_host"],
-            port=options["mqtt_port"],
-            username=options.get("mqtt_username", ""),
-            password=options.get("mqtt_password", ""),
-            topic_base=options.get("mqtt_topic_base", "rfx9600"),
+            host=mqtt_env["host"],
+            port=mqtt_env["port"],
+            username=mqtt_env["username"],
+            password=mqtt_env["password"],
+            topic_base=topic_base,
             on_command=self.handle_command,
         )
 
     def handle_command(self, command_name):
-        codes = load_codes(self.codes_file)
+        codes = load_codes(self.codes_file, self.location)
         code = codes.get(command_name)
         if code is None:
-            print(f"Commande inconnue : {command_name}")
+            print(f"Commande inconnue (ou hors zone '{self.location}') : {command_name}")
             self.mqtt.publish_status(command_name, "unknown_command")
             return
 
@@ -108,7 +137,6 @@ class Rfx9600Bridge:
             self.mqtt.publish_status(command_name, "timeout")
 
     def _wait_for_ack(self, packet_id):
-        self.sock.settimeout(self.response_timeout)
         deadline = time.time() + self.response_timeout
         while True:
             remaining = deadline - time.time()
@@ -126,7 +154,7 @@ class Rfx9600Bridge:
 
     def run(self):
         self.mqtt.connect()
-        print("RFX9600 bridge demarre, en attente de commandes MQTT...")
+        print(f"RFX9600 bridge demarre (location={self.location}), en attente de commandes MQTT...")
         # Le vrai travail se fait dans handle_command(), declenche par les
         # messages MQTT recus sur un thread separe (paho loop_start()).
         while True:
@@ -135,5 +163,6 @@ class Rfx9600Bridge:
 
 if __name__ == "__main__":
     opts = load_options()
-    bridge = Rfx9600Bridge(opts)
+    mqtt_env = load_mqtt_env()
+    bridge = Rfx9600Bridge(opts, mqtt_env)
     bridge.run()

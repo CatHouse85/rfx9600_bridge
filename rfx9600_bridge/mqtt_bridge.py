@@ -2,6 +2,11 @@
 Pont MQTT : s'abonne a un topic pour recevoir les noms de commandes IR
 a envoyer, et publie le resultat de chaque envoi (ok / timeout / erreur).
 
+Les identifiants MQTT (host, port, username, password) sont fournis par
+Supervisor via des variables d'environnement, grace a la declaration
+"services": ["mqtt:want"] dans config.json - pas besoin de les configurer
+a la main.
+
 Important : la connexion MQTT ne se fait JAMAIS au niveau du module (pas de
 code "a plat" hors fonction). Si elle etait executee au moment de l'import,
 une indisponibilite temporaire du broker au demarrage de Home Assistant
@@ -23,7 +28,7 @@ class MqttBridge:
             self.client.username_pw_set(username, password)
 
         self.client.on_connect = self._on_connect
-        self.client.on_disconnect = self._on_disconnect   # ← ajout
+        self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
         self._on_command = on_command
 
@@ -35,7 +40,7 @@ class MqttBridge:
             try:
                 self.client.connect(self._host, self._port, keepalive=60)
                 self.client.loop_start()
-                print(f"MQTT connecte a {self._host}:{self._port}")
+                print(f"MQTT connexion en cours vers {self._host}:{self._port}")
                 return
             except Exception as e:
                 print(f"MQTT connexion echouee ({attempt}/{retries}) : {e}")
@@ -43,15 +48,16 @@ class MqttBridge:
         raise RuntimeError("Impossible de se connecter au broker MQTT apres plusieurs tentatives")
 
     def _on_connect(self, client, userdata, flags, rc):
-       if rc != 0:
-        print(f"MQTT échec de connexion, code retour = {rc}")
-        return     
-       topic = f"{self.topic_base}/command"
-       client.subscribe(topic)
-       print(f"MQTT abonne a {topic}")
+        if rc != 0:
+            # rc courants : 4 = mauvais identifiants, 5 = non autorise
+            print(f"MQTT echec de connexion, code retour = {rc} (pas d'abonnement effectue)")
+            return
+        topic = f"{self.topic_base}/command"
+        client.subscribe(topic)
+        print(f"MQTT connecte et abonne a {topic}")
 
-    def _on_disconnect(self, client, userdata, rc):        # ← nouvelle méthode
-        print(f"MQTT déconnecté, code retour = {rc}")
+    def _on_disconnect(self, client, userdata, rc):
+        print(f"MQTT deconnecte, code retour = {rc}")
 
     def _on_message(self, client, userdata, msg):
         command_name = msg.payload.decode(errors="ignore").strip()
