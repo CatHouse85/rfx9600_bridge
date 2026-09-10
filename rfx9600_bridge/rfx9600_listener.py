@@ -44,12 +44,15 @@ def load_options():
 def load_mqtt_env():
     """Recupere les identifiants MQTT injectes automatiquement par Supervisor
     grace a 'services: [\"mqtt:want\"]' dans config.json."""
-    return {
+    env = {
         "host": os.getenv("MQTT_HOST", "core-mosquitto"),
         "port": int(os.getenv("MQTT_PORT", "1883")),
         "username": os.getenv("MQTT_USERNAME", ""),
         "password": os.getenv("MQTT_PASSWORD", ""),
     }
+    has_creds = "oui" if env["username"] else "NON"
+    print(f"MQTT env recu de Supervisor : host={env['host']} port={env['port']} identifiants presents={has_creds}")
+    return env
 
 
 def load_codes(path, location):
@@ -98,7 +101,12 @@ class Rfx9600Bridge:
     def __init__(self, options, mqtt_env):
         self.device_ip = options["device_ip"]
         self.udp_port = options["udp_port"]
-        self.location = options["location"]
+        self.location = options.get("location")
+        if self.location not in ("la_chaume", "paris"):
+            raise ValueError(
+                f"Option 'location' manquante ou invalide ({self.location!r}). "
+                "Va dans Configuration de l'add-on, choisis 'la_chaume' ou 'paris', puis Enregistrer."
+            )
         self.response_timeout = float(options.get("response_timeout", 2.0))
         self.codes_file = options.get("codes_file", "/share/rfx9600/codes.csv")
         self.packet_ids = PacketIdCounter()
