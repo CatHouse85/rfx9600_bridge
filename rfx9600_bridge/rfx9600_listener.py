@@ -41,17 +41,20 @@ def load_options():
         return json.load(f)
 
 
-def load_mqtt_env():
-    """Recupere les identifiants MQTT injectes automatiquement par Supervisor
-    grace a 'services: [\"mqtt:want\"]' dans config.json."""
+def load_mqtt_env(options):
+    """Priorite aux identifiants injectes par Supervisor (services: mqtt:want).
+    S'ils sont absents (NON confirme par le diagnostic), on retombe sur les
+    identifiants manuels definis dans les options de l'add-on (compte
+    'logins' cree directement dans Mosquitto)."""
     env = {
-        "host": os.getenv("MQTT_HOST", "core-mosquitto"),
-        "port": int(os.getenv("MQTT_PORT", "1883")),
-        "username": os.getenv("MQTT_USERNAME", ""),
-        "password": os.getenv("MQTT_PASSWORD", ""),
+        "host": os.getenv("MQTT_HOST") or "core-mosquitto",
+        "port": int(os.getenv("MQTT_PORT") or 1883),
+        "username": os.getenv("MQTT_USERNAME") or options.get("mqtt_username", ""),
+        "password": os.getenv("MQTT_PASSWORD") or options.get("mqtt_password", ""),
     }
+    source = "Supervisor (auto)" if os.getenv("MQTT_USERNAME") else "options manuelles"
     has_creds = "oui" if env["username"] else "NON"
-    print(f"MQTT env recu de Supervisor : host={env['host']} port={env['port']} identifiants presents={has_creds}")
+    print(f"MQTT identifiants : source={source} host={env['host']} port={env['port']} presents={has_creds}")
     return env
 
 
@@ -171,6 +174,6 @@ class Rfx9600Bridge:
 
 if __name__ == "__main__":
     opts = load_options()
-    mqtt_env = load_mqtt_env()
+    mqtt_env = load_mqtt_env(opts)
     bridge = Rfx9600Bridge(opts, mqtt_env)
     bridge.run()
