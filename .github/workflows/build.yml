@@ -25,10 +25,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read add-on version
+        id: version
+        run: echo "version=$(jq -r .version rfx9600_bridge/config.json)" >> "$GITHUB_OUTPUT"
+
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: ./rfx9600_bridge
           file: ./rfx9600_bridge/Dockerfile
           push: true
-          tags: ghcr.io/cathouse85/rfx9600_bridge:1.0.0
+          tags: ghcr.io/cathouse85/rfx9600_bridge:${{ steps.version.outputs.version }}
