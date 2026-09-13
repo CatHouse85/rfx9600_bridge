@@ -70,14 +70,17 @@ def load_codes(path, location):
         for row in reader:
             if row["site"] not in allowed_sites:
                 continue
+            timeout_raw = (row.get("timeout_ms") or "").strip()
             codes[row["command_name"]] = {
                 "port": int(row["port"]),
                 "payload": bytes.fromhex(row["payload_hex"]),
+                "timeout_ms": int(timeout_raw) if timeout_raw else 0,
+                "holdable": (row.get("holdable") or "").strip().lower() in ("oui", "yes", "true", "1"),
             }
     return codes
 
 
-def build_ir_frame(packet_id, port, payload, timeout_ms=1500):
+def build_ir_frame(packet_id, port, payload, timeout_ms=0):
     header = struct.pack(HEADER_FORMAT, 0x00, packet_id, FRAME_TYPE_IR, len(payload), port, timeout_ms)
     return header + payload
 
@@ -136,7 +139,7 @@ class Rfx9600Bridge:
             return
 
         packet_id = self.packet_ids.next()
-        frame = build_ir_frame(packet_id, code["port"], code["payload"])
+        frame = build_ir_frame(packet_id, code["port"], code["payload"], timeout_ms=code["timeout_ms"])
 
         # Envoi unique, volontairement sans retry (voir docstring en tete de fichier)
         self.sock.sendto(frame, (self.device_ip, self.udp_port))
