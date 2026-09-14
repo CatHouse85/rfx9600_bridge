@@ -62,19 +62,22 @@ def load_codes(path, location):
     """Relit le CSV a chaque commande : les modifications faites a chaud
     dans /share (via Samba / File editor) sont donc prises en compte
     immediatement, sans redemarrer l'add-on. Ne garde que les lignes
-    pertinentes pour cette 'location'."""
+    pertinentes pour cette 'location'. Les lignes commencant par # (une fois
+    les espaces de debut retires) sont ignorees : c'est l'endroit pour mettre
+    des notes, un historique de version, ou toute annotation libre."""
     allowed_sites = SITE_GROUPS[location]
     codes = {}
     with open(path, newline="") as f:
-        reader = csv.DictReader(f)
+        lines = (line for line in f if not line.lstrip().startswith("#"))
+        reader = csv.DictReader(lines)
         for row in reader:
+            if not row.get("command_name"):
+                continue
             if row["site"] not in allowed_sites:
                 continue
-            timeout_raw = (row.get("timeout_ms") or "").strip()
             codes[row["command_name"]] = {
                 "port": int(row["port"]),
                 "payload": bytes.fromhex(row["payload_hex"]),
-                "timeout_ms": int(timeout_raw) if timeout_raw else 0,
                 "holdable": (row.get("holdable") or "").strip().lower() in ("oui", "yes", "true", "1"),
             }
     return codes
@@ -139,7 +142,7 @@ class Rfx9600Bridge:
             return
 
         packet_id = self.packet_ids.next()
-        frame = build_ir_frame(packet_id, code["port"], code["payload"], timeout_ms=code["timeout_ms"])
+        frame = build_ir_frame(packet_id, code["port"], code["payload"])
 
         # Envoi unique, volontairement sans retry (voir docstring en tete de fichier)
         self.sock.sendto(frame, (self.device_ip, self.udp_port))
