@@ -81,37 +81,28 @@ Pour une instance de `location` donnée (`la_chaume` ou `paris`) :
 ## Format de `codes.csv`
 
 ```
-command_name,site,device,function,port,payload_hex,timeout_ms,holdable,date,version,notes
+command_name,site,port,payload_hex,holdable
 ```
 
 | Colonne       | Description |
 |---------------|-------------|
-| `command_name`| Identifiant unique **au sein des lignes visibles par une instance** (`site == all` ou `site` correspondant à sa `location`) — deux sites différents peuvent réutiliser le même nom. |
+| `command_name`| Identifiant unique **au sein des lignes visibles par une instance** (`site == all` ou `site` correspondant à sa `location`) — deux sites différents peuvent réutiliser le même nom. Descriptif par convention (`tv_lg_power_on`), pas de colonnes `device`/`function` séparées. |
 | `site`        | `all` (partout), `la_chaume`, `paris` (les deux pièces), `paris_s`, ou `paris_c`. |
-| `device`      | Nom de l'équipement (libre, pour lisibilité humaine). |
-| `function`    | Fonction visée (libre, ex. `power`, `volume_up`). |
 | `port`        | Sortie IR du RFX9600 (0-3, zéro-indexé — IR1=0 … IR4=3). |
 | `payload_hex` | Trame ECF complète en hexadécimal (voir *Obtenir les payloads IR*). |
-| `timeout_ms`  | Optionnel, défaut `1500`. Durée de répétition de l'émission IR. |
 | `holdable`    | `oui`/`non`. Indique si cette commande est destinée à être répétée par une automatisation HA tant qu'un bouton est maintenu (ex. `volume_up`), ou envoyée en une seule fois (ex. `power_on`). N'affecte pas le comportement du script — c'est une métadonnée pour la conception des automatisations. |
-| `date`, `version`, `notes` | Traçabilité manuelle (une seule ligne active par commande ; incrémenter `version` à la main en cas de changement de code). |
 
-Une seule ligne active par commande (pas d'historique multi-lignes dans le fichier —
-l'historique se fait via `version`/`date`/`notes`, ou via Git si le fichier y est
-versionné).
+`timeout_ms` n'est plus une colonne : la valeur est toujours `0` (envoi unique), fixée dans le code — c'est le comportement observé sur les vraies trames émises par la télécommande Pronto pour un appui simple.
+
+**Lignes de commentaire** : toute ligne commençant par `#` (espaces de début ignorés) est ignorée au chargement — c'est l'endroit pour tes notes, un historique de modification, ou toute annotation libre, n'importe où dans le fichier.
+
+Une seule ligne active par commande.
 
 ## Obtenir les payloads IR (`payload_hex`)
 
-Trois cas possibles pour un équipement donné :
+Méthode retenue : préparer une télécommande Pronto avec toutes les commandes nécessaires (par site), puis capturer directement les trames via Wireshark en les actionnant. Le payload capturé (préfixe `eecf` ou `ffff`, les deux fonctionnent à l'identique) se colle tel quel dans `payload_hex`, sans transformation.
 
-1. **Payload déjà capturé** (ex. via Wireshark, en observant le trafic TSU9600 → RFX9600) :
-   à coller tel quel dans `payload_hex`, qu'il commence par `eecf` ou `ffff` — les deux
-   préfixes sont fonctionnellement équivalents côté RFX9600.
-2. **Code Pronto HEX connu** (format RC5/RC6 brut, commence par `0000`) : à convertir
-   avec `tools/pronto_hex_to_payload.py`, ou en lot avec `tools/batch_convert_codes.py`
-   (voir l'en-tête de ce script pour le format d'entrée attendu).
-3. **Rien de disponible** : capturer via Wireshark en actionnant la télécommande
-   Pronto TSU9600 (programmée avec le bon code si nécessaire).
+Un outil de conversion Pronto HEX → ECF existe aussi (`tools/pronto_hex_to_payload.py`, `tools/batch_convert_codes.py`) pour les cas où seul un code Pronto HEX brut (RC5/RC6, format `0000 ...`) est disponible sans possibilité de capture — mais la capture directe reste la méthode privilégiée : plus fiable, elle évite toute dépendance à la justesse de l'algorithme de conversion.
 
 ## Protocole RFX9600 — notes de référence
 
