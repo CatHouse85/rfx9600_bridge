@@ -84,7 +84,14 @@ def load_codes(path, location):
 
 
 def build_ir_frame(packet_id, port, payload, timeout_ms=0):
-    header = struct.pack(HEADER_FORMAT, 0x00, packet_id, FRAME_TYPE_IR, len(payload), port, timeout_ms)
+    # Le champ "Length" de l'en-tete RFX vaut systematiquement
+    # taille_du_payload + 16, pas la taille brute du payload. Confirme par
+    # comparaison controlee de deux trames strictement identiques (meme
+    # payload octet pour octet), seul ce champ differait entre la version
+    # qui fonctionne (capturee depuis la Pronto) et celle generee par ce
+    # script.
+    length_field = len(payload) + 16
+    header = struct.pack(HEADER_FORMAT, 0x00, packet_id, FRAME_TYPE_IR, length_field, port, timeout_ms)
     return header + payload
 
 
