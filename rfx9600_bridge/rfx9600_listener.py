@@ -85,13 +85,15 @@ def load_codes(path, location):
 
 
 def build_ir_frame(packet_id, port, payload, timeout_ms=0):
-    # Le champ "Length" de l'en-tete RFX vaut systematiquement
-    # taille_du_payload + 16, pas la taille brute du payload. Confirme par
-    # comparaison controlee de deux trames strictement identiques (meme
-    # payload octet pour octet), seul ce champ differait entre la version
-    # qui fonctionne (capturee depuis la Pronto) et celle generee par ce
-    # script.
-    length_field = len(payload) + 16
+    # Le champ "Length" de l'en-tete RFX vaut le NumberOfBytes declare a
+    # l'INTERIEUR du payload (octets 2-3, juste apres le Type eecf/ffff)
+    # + 16 - confirme par comparaison controlee de trames. On lit ce champ
+    # directement plutot que de le deduire de la taille totale du payload,
+    # car pour un payload "eecf" (base Philips), NumberOfBytes exclut les
+    # 8 octets de son propre en-tete - contrairement a nos payloads "ffff"
+    # generes nous-memes, ou les deux coincident.
+    declared_numbytes = struct.unpack(">H", payload[2:4])[0]
+    length_field = declared_numbytes + 16
     header = struct.pack(HEADER_FORMAT, 0x00, packet_id, FRAME_TYPE_IR, length_field, port, timeout_ms)
     return header + payload
 
