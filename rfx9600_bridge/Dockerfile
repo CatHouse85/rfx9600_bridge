@@ -7,6 +7,7 @@ WORKDIR /app
 COPY run.sh /app/
 COPY mqtt_bridge.py /app/
 COPY rfx9600_listener.py /app/
+COPY log_utils.py /app/
 
 RUN python3 -m pip install paho-mqtt
 

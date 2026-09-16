@@ -16,6 +16,7 @@ import threading
 import time
 
 from mqtt_bridge import MqttBridge
+from log_utils import log
 
 OPTIONS_PATH = "/data/options.json"
 
@@ -54,7 +55,7 @@ def load_mqtt_env(options):
     }
     source = "Supervisor (auto)" if os.getenv("MQTT_USERNAME") else "options manuelles"
     has_creds = "oui" if env["username"] else "NON"
-    print(f"MQTT identifiants : source={source} host={env['host']} port={env['port']} presents={has_creds}")
+    log(f"MQTT identifiants : source={source} host={env['host']} port={env['port']} presents={has_creds}")
     return env
 
 
@@ -144,7 +145,7 @@ class Rfx9600Bridge:
         codes = load_codes(self.codes_file, self.location)
         code = codes.get(command_name)
         if code is None:
-            print(f"Commande inconnue (ou hors zone '{self.location}') : {command_name}")
+            log(f"Commande inconnue (ou hors zone '{self.location}') : {command_name}")
             self.mqtt.publish_status(command_name, "unknown_command")
             return
 
@@ -153,7 +154,7 @@ class Rfx9600Bridge:
 
         # Envoi unique, volontairement sans retry (voir docstring en tete de fichier)
         self.sock.sendto(frame, (self.device_ip, self.udp_port))
-        print(f"Envoye {command_name} (packet_id={packet_id}) vers {self.device_ip}:{self.udp_port}")
+        log(f"Envoye {command_name} (packet_id={packet_id}) vers {self.device_ip}:{self.udp_port}")
 
         if self._wait_for_ack(packet_id):
             self.mqtt.publish_status(command_name, "ok")
@@ -172,13 +173,13 @@ class Rfx9600Bridge:
             except socket.timeout:
                 return False
             if len(data) >= 3 and get_packet_id(data) == packet_id:
-                print(f"Ack recu pour packet_id={packet_id} depuis {addr}")
+                log(f"Ack recu pour packet_id={packet_id} depuis {addr}")
                 return True
             # trame recue mais avec un autre packet_id : on ignore et on continue d'attendre
 
     def run(self):
         self.mqtt.connect()
-        print(f"RFX9600 bridge demarre (location={self.location}), en attente de commandes MQTT...")
+        log(f"RFX9600 bridge demarre (location={self.location}), en attente de commandes MQTT...")
         # Le vrai travail se fait dans handle_command(), declenche par les
         # messages MQTT recus sur un thread separe (paho loop_start()).
         while True:

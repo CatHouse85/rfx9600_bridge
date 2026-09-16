@@ -16,6 +16,8 @@ ferait planter tout le programme avant meme d'afficher un message de debug.
 import time
 import paho.mqtt.client as mqtt
 
+from log_utils import log
+
 
 class MqttBridge:
     def __init__(self, host, port, username, password, topic_base, on_command):
@@ -40,34 +42,34 @@ class MqttBridge:
             try:
                 self.client.connect(self._host, self._port, keepalive=60)
                 self.client.loop_start()
-                print(f"MQTT connexion en cours vers {self._host}:{self._port}")
+                log(f"MQTT connexion en cours vers {self._host}:{self._port}")
                 return
             except Exception as e:
-                print(f"MQTT connexion echouee ({attempt}/{retries}) : {e}")
+                log(f"MQTT connexion echouee ({attempt}/{retries}) : {e}")
                 time.sleep(delay)
         raise RuntimeError("Impossible de se connecter au broker MQTT apres plusieurs tentatives")
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc != 0:
             # rc courants : 4 = mauvais identifiants, 5 = non autorise
-            print(f"MQTT echec de connexion, code retour = {rc} (pas d'abonnement effectue)")
+            log(f"MQTT echec de connexion, code retour = {rc} (pas d'abonnement effectue)")
             return
         topic = f"{self.topic_base}/command"
         client.subscribe(topic)
-        print(f"MQTT connecte et abonne a {topic}")
+        log(f"MQTT connecte et abonne a {topic}")
 
     def _on_disconnect(self, client, userdata, rc):
-        print(f"MQTT deconnecte, code retour = {rc}")
+        log(f"MQTT deconnecte, code retour = {rc}")
 
     def _on_message(self, client, userdata, msg):
         command_name = msg.payload.decode(errors="ignore").strip()
         if not command_name:
             return
-        print(f"MQTT commande recue : {command_name}")
+        log(f"MQTT commande recue : {command_name}")
         try:
             self._on_command(command_name)
         except Exception as e:
-            print(f"Erreur lors du traitement de la commande '{command_name}' : {e}")
+            log(f"Erreur lors du traitement de la commande '{command_name}' : {e}")
             self.publish_status(command_name, "error", str(e))
 
     def publish_status(self, command_name, status, extra=""):
@@ -76,4 +78,4 @@ class MqttBridge:
         if extra:
             payload += f":{extra}"
         self.client.publish(topic, payload)
-        print(f"MQTT -> {topic}: {payload}")
+        log(f"MQTT -> {topic}: {payload}")
