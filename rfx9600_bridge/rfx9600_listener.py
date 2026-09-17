@@ -98,6 +98,49 @@ def build_ir_frame(packet_id, port, payload, timeout_ms=0):
     return header + payload
 
 
+def build_powersense_frame(packet_id, ir_port, sense_port, check_off, payload):
+    """Construit une trame IR conditionnee par un port PowerSense du RFX9600.
+    Structure reverse-engineered a partir de captures Wireshark reelles et
+    validee octet pour octet (reconstruction identique aux deux captures de
+    reference, check OFF et check ON, sur orangebox_power_toggle IR4/Sense1).
+
+    - packet_id : identifiant de trame (16 bits)
+    - ir_port   : port IR du RFX9600 a utiliser si la condition est remplie (0-3)
+    - sense_port: port PowerSense a tester (0-3)
+    - check_off : True pour verifier "port Sense = OFF", False pour "= ON"
+    - payload   : payload IR (eecf/ffff) a emettre si la condition est vraie
+
+    Le RFX9600 decide localement : si la condition est vraie, il emet le
+    payload IR ; sinon, silence total (pas de trame de retour).
+    Le delai configurable cote Pronto ("Wait for") n'est PAS transmis dans
+    la trame - c'est un comportement local a la telecommande.
+    """
+    declared_numbytes = struct.unpack(">H", payload[2:4])[0]
+    embedded_ir_header = (
+        struct.pack(">H", 0x4000) +           # Type (bloc IR classique reutilise)
+        struct.pack(">H", declared_numbytes + 16) +  # Length (meme formule que build_ir_frame)
+        bytes([ir_port]) +                    # Port IR
+        bytes(5) +                            # Unknown
+        struct.pack(">H", 0) +                # Timeout
+        bytes(4)                              # Unknown
+    )
+
+    body = struct.pack(">H", 0x0108) + struct.pack(">H", 0x0000)
+    if check_off:
+        # Bloc supplementaire de 4 octets, present uniquement en mode "check OFF"
+        body += struct.pack(">H", 0x1300) + struct.pack(">H", 0x000c)
+    body += struct.pack(">H", 0x6000) + struct.pack(">H", 0x0005)
+    body += struct.pack(">H", sense_port) + struct.pack(">H", 0x0000)
+    body += embedded_ir_header
+    body += payload
+
+    total_len = 12 + 2 + 2 + len(body)  # prefixe(12) + Type(2) + Length(2) + reste
+    length_field = total_len - 20
+
+    prefix = bytes([0x00]) + struct.pack(">H", packet_id) + bytes(9)
+    return prefix + struct.pack(">H", 0x2100) + struct.pack(">H", length_field) + body
+
+
 def get_packet_id(frame):
     # Le packet_id est toujours aux octets 1-2, quel que soit le type de trame
     return struct.unpack_from(">H", frame, 1)[0]
@@ -144,6 +187,11 @@ class Rfx9600Bridge:
         )
 
     def handle_command(self, command_name):
+        # --- TEST TEMPORAIRE PowerSense (a retirer une fois valide en reel) ---
+        if command_name == "test_powersense_orangebox":
+            self._test_powersense_orangebox()
+            return
+
         codes = load_codes(self.codes_file, self.location)
         code = codes.get(command_name)
         if code is None:
@@ -162,6 +210,27 @@ class Rfx9600Bridge:
             self.mqtt.publish_status(command_name, "ok")
         else:
             self.mqtt.publish_status(command_name, "timeout")
+
+    def _test_powersense_orangebox(self):
+        """Test temporaire : envoie orangebox_power_toggle sur IR4, conditionne
+        au port PowerSense 1 etant sur OFF. Si la Box Orange est deja allumee
+        (Sense1=ON), le RFX9600 ne doit RIEN emettre."""
+        codes = load_codes(self.codes_file, self.location)
+        code = codes.get("orangebox_power_toggle")
+        if code is None:
+            log("Test PowerSense : commande orangebox_power_toggle introuvable dans codes.csv")
+            self.mqtt.publish_status("test_powersense_orangebox", "unknown_command")
+            return
+        packet_id = self.packet_ids.next()
+        frame = build_powersense_frame(
+            packet_id, ir_port=3, sense_port=0, check_off=True, payload=code["payload"]
+        )
+        self.sock.sendto(frame, (self.device_ip, self.udp_port))
+        log(f"Test PowerSense envoye (packet_id={packet_id}) vers {self.device_ip}:{self.udp_port}")
+        if self._wait_for_ack(packet_id):
+            self.mqtt.publish_status("test_powersense_orangebox", "ok")
+        else:
+            self.mqtt.publish_status("test_powersense_orangebox", "timeout")
 
     def _wait_for_ack(self, packet_id):
         deadline = time.time() + self.response_timeout
