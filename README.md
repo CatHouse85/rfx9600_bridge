@@ -81,7 +81,7 @@ Pour une instance de `location` donnée (`la_chaume` ou `paris`) :
 ## Format de `codes.csv`
 
 ```
-command_name,site,port,payload_hex,holdable
+command_name,site,port,payload_hex,holdable,sense_port,sense_logic
 ```
 
 | Colonne       | Description |
@@ -91,6 +91,8 @@ command_name,site,port,payload_hex,holdable
 | `port`        | Sortie IR du RFX9600 (0-3, zéro-indexé — IR1=0 … IR4=3). |
 | `payload_hex` | Trame ECF complète en hexadécimal (voir *Obtenir les payloads IR*). |
 | `holdable`    | `oui`/`non`. Indique si cette commande est destinée à être répétée par une automatisation HA tant qu'un bouton est maintenu (ex. `volume_up`), ou envoyée en une seule fois (ex. `power_on`). N'affecte pas le comportement du script — c'est une métadonnée pour la conception des automatisations. |
+| `sense_port`  | `0` = envoi IR classique, sans condition (comportement historique). `1`-`4` = la commande n'est émise que si l'état du port PowerSense correspondant (Sense1=`1` … Sense4=`4`, 1-indexé dans le CSV) satisfait `sense_logic`. |
+| `sense_logic` | `and` = on émet si le port Sense est **ON**. `nand` = on émet si le port Sense est **OFF**. Ignoré si `sense_port` = `0`. |
 
 `timeout_ms` n'est plus une colonne : la valeur est toujours `0` (envoi unique), fixée dans le code — c'est le comportement observé sur les vraies trames émises par la télécommande Pronto pour un appui simple.
 
@@ -98,11 +100,45 @@ command_name,site,port,payload_hex,holdable
 
 Une seule ligne active par commande.
 
+### Commandes conditionnées par PowerSense
+
+Quand `sense_port` ≠ `0`, l'add-on construit une trame PowerSense (type `0x2100`) au lieu
+d'une trame IR classique (type `0x4000`) : le RFX9600 teste localement l'état du port Sense
+indiqué et, si la condition est vraie, émet le payload IR ; sinon il reste totalement
+silencieux (aucune trame de réponse). Dans ce cas, un statut `timeout` publié sur
+`rfx9600/<location>/status` peut donc signifier soit une vraie perte de trame, soit tout
+simplement que la condition PowerSense n'était pas remplie — ce n'est pas une erreur en soi.
+
+Exemple : `orangebox_power_toggle,la_chaume,3,<payload>,non,1,nand` n'émettrait le toggle IR
+sur IR4 que si le port Sense1 est à OFF. (Non activé actuellement dans `codes_la_chaume.csv` :
+le cas Box Orange sera in fine traité par une vérification HTTP côté automatisation HA plutôt
+que par PowerSense seul — voir la section *Notes de conception* ci-dessous.)
+
 ## Obtenir les payloads IR (`payload_hex`)
 
 Méthode retenue : préparer une télécommande Pronto avec toutes les commandes nécessaires (par site), puis capturer directement les trames via Wireshark en les actionnant. Le payload capturé (préfixe `eecf` ou `ffff`, les deux fonctionnent à l'identique) se colle tel quel dans `payload_hex`, sans transformation.
 
 Un outil de conversion Pronto HEX → ECF existe aussi (`tools/pronto_hex_to_payload.py`, `tools/batch_convert_codes.py`) pour les cas où seul un code Pronto HEX brut (RC5/RC6, format `0000 ...`) est disponible sans possibilité de capture — mais la capture directe reste la méthode privilégiée : plus fiable, elle évite toute dépendance à la justesse de l'algorithme de conversion.
+
+## Messages MQTT "retained"
+
+Le broker Mosquitto peut retenir (`retain`) le dernier message publié sur
+`rfx9600/<location>/command` et le rejouer automatiquement dès que l'add-on se
+réabonne au topic — donc à chaque redémarrage de l'add-on, sans aucune action
+de l'utilisateur. L'add-on ignore explicitement ces messages retenus (flag
+`retain` du message MQTT) pour ne jamais rejouer la dernière commande envoyée
+au simple redémarrage. Si une commande doit être publiée avec `retain=true`
+depuis Home Assistant pour une autre raison, elle sera donc silencieusement
+ignorée par cet add-on au démarrage — c'est le comportement voulu.
+
+## Notes de conception
+
+Cet add-on reste volontairement un **exécuteur de protocole sans état** : pas de retry,
+pas de watchdog, pas de vérification HTTP d'un autre équipement. Toute logique de plus
+haut niveau (mise en veille automatique après 4h d'inactivité pour la TV LG et la Box
+Orange, vérification de l'état réel de la Box Orange par requête HTTP avant/après un
+envoi IR, etc.) est déléguée à la couche d'automatisations Home Assistant, à construire
+dans une phase ultérieure du projet.
 
 ## Protocole RFX9600 — notes de référence
 
