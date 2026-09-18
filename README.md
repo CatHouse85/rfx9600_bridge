@@ -91,8 +91,27 @@ command_name,site,port,payload_hex,holdable,sense_port,sense_logic
 | `port`        | Sortie IR du RFX9600 (0-3, zéro-indexé — IR1=0 … IR4=3). |
 | `payload_hex` | Trame ECF complète en hexadécimal (voir *Obtenir les payloads IR*). |
 | `holdable`    | `oui`/`non`. Indique si cette commande est destinée à être répétée par une automatisation HA tant qu'un bouton est maintenu (ex. `volume_up`), ou envoyée en une seule fois (ex. `power_on`). N'affecte pas le comportement du script — c'est une métadonnée pour la conception des automatisations. |
-| `sense_port`  | `0` = envoi IR classique, sans condition (comportement historique). `1`-`4` = la commande n'est émise que si l'état du port PowerSense correspondant (Sense1=`1` … Sense4=`4`, 1-indexé dans le CSV) satisfait `sense_logic`. |
-| `sense_logic` | `and` = on émet si le port Sense est **ON**. `nand` = on émet si le port Sense est **OFF**. Ignoré si `sense_port` = `0`. |
+| `sense_port`  | **Vide** = envoi IR classique, sans condition. `0`-`3` = la commande n'est émise que si l'état du port PowerSense correspondant (Sense1=`0` … Sense4=`3`, 0-indexé — même convention que les ports IR et relais) satisfait `sense_logic`. |
+| `sense_logic` | `and` = on émet si le port Sense est **ON**. `nand` = on émet si le port Sense est **OFF**. Ignoré si `sense_port` est vide. |
+
+### Commandes relais
+
+Une ligne avec `payload_hex` **vide** est une commande relais (pas de trame IR). Dans ce
+cas :
+- `port` = numéro de relais du RFX9600, 0-indexé (relais1=`0` … relais4=`3`) — même
+  convention que les ports IR.
+- L'état ON/OFF est donné par le suffixe du `command_name`, qui doit finir par `_on` ou
+  `_off` — une ligne CSV par état, exactement comme pour les commandes IR discrètes
+  (`onkyo_power_on` / `onkyo_power_off`). Une ligne relais dont le nom ne finit par
+  aucun des deux suffixes est ignorée au chargement (avec un message dans les logs).
+- Les colonnes `sense_port`/`sense_logic` n'ont pas de sens pour un relais et sont
+  ignorées ; les laisser vides par convention.
+
+Exemple (`site=all,port=0` pour le relais 1) :
+```
+relay_1_on,all,0,,non,,
+relay_1_off,all,0,,non,,
+```
 
 `timeout_ms` n'est plus une colonne : la valeur est toujours `0` (envoi unique), fixée dans le code — c'est le comportement observé sur les vraies trames émises par la télécommande Pronto pour un appui simple.
 
@@ -109,10 +128,11 @@ silencieux (aucune trame de réponse). Dans ce cas, un statut `timeout` publié 
 `rfx9600/<location>/status` peut donc signifier soit une vraie perte de trame, soit tout
 simplement que la condition PowerSense n'était pas remplie — ce n'est pas une erreur en soi.
 
-Exemple : `orangebox_power_toggle,la_chaume,3,<payload>,non,1,nand` n'émettrait le toggle IR
-sur IR4 que si le port Sense1 est à OFF. (Non activé actuellement dans `codes_la_chaume.csv` :
-le cas Box Orange sera in fine traité par une vérification HTTP côté automatisation HA plutôt
-que par PowerSense seul — voir la section *Notes de conception* ci-dessous.)
+Exemple : `orangebox_power_toggle,la_chaume,3,<payload>,non,0,nand` n'émettrait le toggle IR
+sur IR4 que si le port Sense1 (`sense_port=0`) est à OFF. (Non activé actuellement dans
+`codes_la_chaume.csv` : le cas Box Orange sera in fine traité par une vérification HTTP côté
+automatisation HA plutôt que par PowerSense seul — voir la section *Notes de conception*
+ci-dessous.)
 
 ## Obtenir les payloads IR (`payload_hex`)
 
