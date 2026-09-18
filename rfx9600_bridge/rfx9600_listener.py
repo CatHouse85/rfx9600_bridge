@@ -65,7 +65,14 @@ def load_codes(path, location):
     immediatement, sans redemarrer l'add-on. Ne garde que les lignes
     pertinentes pour cette 'location'. Les lignes commencant par # (une fois
     les espaces de debut retires) sont ignorees : c'est l'endroit pour mettre
-    des notes, un historique de version, ou toute annotation libre."""
+    des notes, un historique de version, ou toute annotation libre.
+
+    Colonnes PowerSense (optionnelles) :
+      - sense_port : 0 = pas de condition (envoi IR classique), 1-4 = port
+        Sense1-4 du RFX9600 (1-indexe dans le CSV, comme les IR sont
+        0-indexes ; converti en 0-3 au moment de construire la trame).
+      - sense_logic : "and" = on emet si le port Sense est ON, "nand" = on
+        emet si le port Sense est OFF. Ignore si sense_port == 0."""
     allowed_sites = SITE_GROUPS[location]
     codes = {}
     with open(path, newline="") as f:
@@ -76,10 +83,19 @@ def load_codes(path, location):
                 continue
             if row["site"] not in allowed_sites:
                 continue
+
+            sense_port_raw = int((row.get("sense_port") or "0").strip() or "0")
+            sense_logic = (row.get("sense_logic") or "").strip().lower()
+
             codes[row["command_name"]] = {
                 "port": int(row["port"]),
                 "payload": bytes.fromhex(row["payload_hex"]),
                 "holdable": (row.get("holdable") or "").strip().lower() in ("oui", "yes", "true", "1"),
+                # sense_port : 0 = pas de PowerSense, sinon 0-indexe (Sense1 -> 0, etc.)
+                "sense_port": (sense_port_raw - 1) if sense_port_raw > 0 else 0,
+                "sense_active": sense_port_raw > 0,
+                # nand -> on verifie "Sense = OFF" (check_off=True), and -> "Sense = ON"
+                "check_off": (sense_logic == "nand"),
             }
     return codes
 
@@ -187,11 +203,6 @@ class Rfx9600Bridge:
         )
 
     def handle_command(self, command_name):
-        # --- TEST TEMPORAIRE PowerSense (a retirer une fois valide en reel) ---
-        if command_name == "test_powersense_orangebox":
-            self._test_powersense_orangebox()
-            return
-
         codes = load_codes(self.codes_file, self.location)
         code = codes.get(command_name)
         if code is None:
@@ -200,7 +211,17 @@ class Rfx9600Bridge:
             return
 
         packet_id = self.packet_ids.next()
-        frame = build_ir_frame(packet_id, code["port"], code["payload"])
+
+        if code["sense_active"]:
+            frame = build_powersense_frame(
+                packet_id,
+                ir_port=code["port"],
+                sense_port=code["sense_port"],
+                check_off=code["check_off"],
+                payload=code["payload"],
+            )
+        else:
+            frame = build_ir_frame(packet_id, code["port"], code["payload"])
 
         # Envoi unique, volontairement sans retry (voir docstring en tete de fichier)
         self.sock.sendto(frame, (self.device_ip, self.udp_port))
@@ -210,27 +231,6 @@ class Rfx9600Bridge:
             self.mqtt.publish_status(command_name, "ok")
         else:
             self.mqtt.publish_status(command_name, "timeout")
-
-    def _test_powersense_orangebox(self):
-        """Test temporaire : envoie orangebox_power_toggle sur IR4, conditionne
-        au port PowerSense 1 etant sur OFF. Si la Box Orange est deja allumee
-        (Sense1=ON), le RFX9600 ne doit RIEN emettre."""
-        codes = load_codes(self.codes_file, self.location)
-        code = codes.get("orangebox_power_toggle")
-        if code is None:
-            log("Test PowerSense : commande orangebox_power_toggle introuvable dans codes.csv")
-            self.mqtt.publish_status("test_powersense_orangebox", "unknown_command")
-            return
-        packet_id = self.packet_ids.next()
-        frame = build_powersense_frame(
-            packet_id, ir_port=3, sense_port=0, check_off=True, payload=code["payload"]
-        )
-        self.sock.sendto(frame, (self.device_ip, self.udp_port))
-        log(f"Test PowerSense envoye (packet_id={packet_id}) vers {self.device_ip}:{self.udp_port}")
-        if self._wait_for_ack(packet_id):
-            self.mqtt.publish_status("test_powersense_orangebox", "ok")
-        else:
-            self.mqtt.publish_status("test_powersense_orangebox", "timeout")
 
     def _wait_for_ack(self, packet_id):
         deadline = time.time() + self.response_timeout

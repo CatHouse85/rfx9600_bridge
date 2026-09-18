@@ -62,6 +62,14 @@ class MqttBridge:
         log(f"MQTT deconnecte, code retour = {rc}")
 
     def _on_message(self, client, userdata, msg):
+        if msg.retain:
+            # Message "retained" rejoue par le broker au moment de l'abonnement
+            # (donc a chaque redemarrage de l'add-on) - ce n'est pas une vraie
+            # commande envoyee par un utilisateur/automatisation. On l'ignore
+            # pour eviter de rejouer la derniere commande a chaque restart.
+            command_name = msg.payload.decode(errors="ignore").strip()
+            log(f"MQTT message retenu ignore (rejoue par le broker au redemarrage) : {command_name}")
+            return
         command_name = msg.payload.decode(errors="ignore").strip()
         if not command_name:
             return
