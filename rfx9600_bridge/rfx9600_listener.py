@@ -25,6 +25,10 @@ OPTIONS_PATH = "/data/options.json"
 # + Port(1) + Unknown(5) + Timeout(2) + Unknown(4) = 28 octets
 HEADER_FORMAT = ">BH9xHHB5xH4x"
 FRAME_TYPE_IR = 0x4000
+FRAME_TYPE_RELAY = 0x6300
+RELAY_LENGTH = 0x0006
+# 10 derniers octets, constants sur les 8 captures de reference (4 relais x on/off)
+RELAY_TAIL = bytes.fromhex("000020000008000000c3")
 
 # Un fichier codes.csv unique, partage par tous les sites (colonne "site").
 # Chaque instance ne charge que les lignes qui la concernent :
@@ -68,35 +72,62 @@ def load_codes(path, location):
     des notes, un historique de version, ou toute annotation libre.
 
     Colonnes PowerSense (optionnelles) :
-      - sense_port : 0 = pas de condition (envoi IR classique), 1-4 = port
-        Sense1-4 du RFX9600 (1-indexe dans le CSV, comme les IR sont
-        0-indexes ; converti en 0-3 au moment de construire la trame).
+      - sense_port : VIDE = pas de condition (envoi IR classique). 0-3 = port
+        Sense1-4 du RFX9600, 0-indexe - meme convention que les ports IR et
+        relais (pas de conversion d'index necessaire).
       - sense_logic : "and" = on emet si le port Sense est ON, "nand" = on
-        emet si le port Sense est OFF. Ignore si sense_port == 0."""
+        emet si le port Sense est OFF. Ignore si sense_port est vide.
+
+    Commandes relais : une ligne relais se reconnait a son 'payload_hex' vide.
+    'port' est alors le numero de relais (0-indexe, comme les IR : relais1=0
+    ... relais4=3), et l'etat ON/OFF est donne par le suffixe du
+    command_name (doit finir par '_on' ou '_off'), ex. 'relay_1_on'. Chaque
+    etat est une ligne CSV distincte, comme pour les commandes IR discretes
+    (onkyo_power_on / onkyo_power_off)."""
     allowed_sites = SITE_GROUPS[location]
     codes = {}
     with open(path, newline="") as f:
         lines = (line for line in f if not line.lstrip().startswith("#"))
         reader = csv.DictReader(lines)
         for row in reader:
-            if not row.get("command_name"):
+            command_name = row.get("command_name")
+            if not command_name:
                 continue
             if row["site"] not in allowed_sites:
                 continue
 
-            sense_port_raw = int((row.get("sense_port") or "0").strip() or "0")
+            sense_port_str = (row.get("sense_port") or "").strip()
             sense_logic = (row.get("sense_logic") or "").strip().lower()
+            payload_hex = (row.get("payload_hex") or "").strip()
 
-            codes[row["command_name"]] = {
+            entry = {
                 "port": int(row["port"]),
-                "payload": bytes.fromhex(row["payload_hex"]),
                 "holdable": (row.get("holdable") or "").strip().lower() in ("oui", "yes", "true", "1"),
-                # sense_port : 0 = pas de PowerSense, sinon 0-indexe (Sense1 -> 0, etc.)
-                "sense_port": (sense_port_raw - 1) if sense_port_raw > 0 else 0,
-                "sense_active": sense_port_raw > 0,
+                # sense_port : vide = pas de PowerSense, sinon 0-indexe (Sense1=0 ... Sense4=3)
+                "sense_port": int(sense_port_str) if sense_port_str else 0,
+                "sense_active": sense_port_str != "",
                 # nand -> on verifie "Sense = OFF" (check_off=True), and -> "Sense = ON"
                 "check_off": (sense_logic == "nand"),
             }
+
+            if payload_hex:
+                entry["kind"] = "ir"
+                entry["payload"] = bytes.fromhex(payload_hex)
+            else:
+                if command_name.endswith("_on"):
+                    relay_state_on = True
+                elif command_name.endswith("_off"):
+                    relay_state_on = False
+                else:
+                    log(
+                        f"Ligne relais ignoree (command_name doit finir par "
+                        f"'_on' ou '_off') : {command_name}"
+                    )
+                    continue
+                entry["kind"] = "relay"
+                entry["relay_state_on"] = relay_state_on
+
+            codes[command_name] = entry
     return codes
 
 
@@ -157,6 +188,21 @@ def build_powersense_frame(packet_id, ir_port, sense_port, check_off, payload):
     return prefix + struct.pack(">H", 0x2100) + struct.pack(">H", length_field) + body
 
 
+def build_relay_frame(packet_id, relay_port, state_on):
+    """Construit une trame de commande relais (Type 0x6300, sans payload).
+    Structure reverse-engineered et validee octet pour octet contre 8
+    captures Wireshark reelles (4 relais x ON/OFF).
+
+    - packet_id  : identifiant de trame (16 bits)
+    - relay_port : numero de relais du RFX9600, 0-indexe (relais1=0 ... relais4=3)
+    - state_on   : True = ON, False = OFF
+    """
+    prefix = bytes([0x00]) + struct.pack(">H", packet_id) + bytes(9)
+    type_length = struct.pack(">H", FRAME_TYPE_RELAY) + struct.pack(">H", RELAY_LENGTH)
+    port_state = bytes([relay_port]) + bytes([0x01 if state_on else 0x00])
+    return prefix + type_length + port_state + RELAY_TAIL
+
+
 def get_packet_id(frame):
     # Le packet_id est toujours aux octets 1-2, quel que soit le type de trame
     return struct.unpack_from(">H", frame, 1)[0]
@@ -212,7 +258,9 @@ class Rfx9600Bridge:
 
         packet_id = self.packet_ids.next()
 
-        if code["sense_active"]:
+        if code["kind"] == "relay":
+            frame = build_relay_frame(packet_id, code["port"], code["relay_state_on"])
+        elif code["sense_active"]:
             frame = build_powersense_frame(
                 packet_id,
                 ir_port=code["port"],
