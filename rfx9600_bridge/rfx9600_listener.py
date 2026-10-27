@@ -78,6 +78,12 @@ def load_codes(path, location):
       - sense_logic : "and" = on emet si le port Sense est ON, "nand" = on
         emet si le port Sense est OFF. Ignore si sense_port est vide.
 
+    Colonne hold_ms (optionnelle, ajoutee en fin de ligne) : duree en
+    millisecondes pendant laquelle le RFX9600 maintient l'emission IR
+    (champ Timeout de la trame, equivalent de l'auto-repeat de la Pronto).
+    VIDE ou 0 = envoi unique, comme avant. Exemple : jvc_power_off = 500.
+    Sans effet sur les commandes relais et PowerSense.
+
     Commandes relais : une ligne relais se reconnait a son 'payload_hex' vide.
     'port' est alors le numero de relais (0-indexe, comme les IR : relais1=0
     ... relais4=3), et l'etat ON/OFF est donne par le suffixe du
@@ -99,6 +105,7 @@ def load_codes(path, location):
             sense_port_str = (row.get("sense_port") or "").strip()
             sense_logic = (row.get("sense_logic") or "").strip().lower()
             payload_hex = (row.get("payload_hex") or "").strip()
+            hold_ms_str = (row.get("hold_ms") or "").strip()
 
             entry = {
                 "port": int(row["port"]),
@@ -108,6 +115,7 @@ def load_codes(path, location):
                 "sense_active": sense_port_str != "",
                 # nand -> on verifie "Sense = OFF" (check_off=True), and -> "Sense = ON"
                 "check_off": (sense_logic == "nand"),
+                "hold_ms": int(hold_ms_str) if hold_ms_str.isdigit() else 0,
             }
 
             if payload_hex:
@@ -269,11 +277,12 @@ class Rfx9600Bridge:
                 payload=code["payload"],
             )
         else:
-            frame = build_ir_frame(packet_id, code["port"], code["payload"])
+            frame = build_ir_frame(packet_id, code["port"], code["payload"], timeout_ms=code["hold_ms"])
 
         # Envoi unique, volontairement sans retry (voir docstring en tete de fichier)
         self.sock.sendto(frame, (self.device_ip, self.udp_port))
-        log(f"Envoye {command_name} (packet_id={packet_id}) vers {self.device_ip}:{self.udp_port}")
+        hold_info = f" hold_ms={code['hold_ms']}" if code["hold_ms"] else ""
+        log(f"Envoye {command_name} (packet_id={packet_id}{hold_info}) vers {self.device_ip}:{self.udp_port}")
 
         if self._wait_for_ack(packet_id):
             self.mqtt.publish_status(command_name, "ok")
