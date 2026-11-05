@@ -185,7 +185,11 @@ def build_powersense_frame(packet_id, ir_port, sense_port, check_off, payload):
         # Bloc supplementaire de 4 octets, present uniquement en mode "check OFF"
         body += struct.pack(">H", 0x1300) + struct.pack(">H", 0x000c)
     body += struct.pack(">H", 0x6000) + struct.pack(">H", 0x0005)
-    body += struct.pack(">H", sense_port) + struct.pack(">H", 0x0000)
+    # Le numero du port Sense est UN OCTET (premier octet de ce champ de 4
+    # octets), confirme sur les captures Sense1 a Sense4. Avant la v1.9.1, il
+    # etait ecrit sur le 2e octet : seul Sense1 (0) fonctionnait, les autres
+    # ports etaient lus comme Sense1.
+    body += bytes([sense_port, 0x00, 0x00, 0x00])
     body += embedded_ir_header
     body += payload
 
